@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, ArrowUpDown, Eye } from "lucide-react"
-import { StudentRadarChart } from "./student-radar-chart"
+import { Search, ArrowUpDown, Eye, Download, Filter } from "lucide-react"
+import { DetailedStudentProfile } from "./detailed-student-profile"
 
 interface Student {
   student_id: string
@@ -43,10 +43,13 @@ export function StudentsTable() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [classFilter, setClassFilter] = useState("all")
+  const [clusterFilter, setClusterFilter] = useState("all")
   const [sortField, setSortField] = useState<keyof Student>("name")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [showDetailedProfile, setShowDetailedProfile] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [showAllColumns, setShowAllColumns] = useState(false)
   const studentsPerPage = 10
 
   useEffect(() => {
@@ -74,7 +77,8 @@ export function StudentsTable() {
         student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.student_id.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesClass = classFilter === "all" || student.class === classFilter
-      return matchesSearch && matchesClass
+      const matchesCluster = clusterFilter === "all" || student.cluster.toString() === clusterFilter
+      return matchesSearch && matchesClass && matchesCluster
     })
 
     // Sort students
@@ -95,7 +99,7 @@ export function StudentsTable() {
 
     setFilteredStudents(filtered)
     setCurrentPage(1)
-  }, [students, searchTerm, classFilter, sortField, sortDirection])
+  }, [students, searchTerm, classFilter, clusterFilter, sortField, sortDirection])
 
   const handleSort = (field: keyof Student) => {
     if (sortField === field) {
@@ -106,7 +110,53 @@ export function StudentsTable() {
     }
   }
 
+  const handleViewProfile = (student: Student) => {
+    setSelectedStudent(student)
+    setShowDetailedProfile(true)
+  }
+
+  const exportToCSV = () => {
+    const headers = [
+      "Student ID",
+      "Name",
+      "Class",
+      "Comprehension",
+      "Attention",
+      "Focus",
+      "Retention",
+      "Assessment Score",
+      "Engagement Time",
+      "Learning Persona",
+    ]
+    const csvContent = [
+      headers.join(","),
+      ...filteredStudents.map((student) =>
+        [
+          student.student_id,
+          `"${student.name}"`,
+          `"${student.class}"`,
+          student.comprehension,
+          student.attention,
+          student.focus,
+          student.retention,
+          student.assessment_score,
+          student.engagement_time,
+          `"${clusterNames[student.cluster as keyof typeof clusterNames]}"`,
+        ].join(","),
+      ),
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "students_data.csv"
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
   const uniqueClasses = Array.from(new Set(students.map((s) => s.class))).sort()
+  const uniqueClusters = Array.from(new Set(students.map((s) => s.cluster))).sort()
 
   // Pagination
   const totalPages = Math.ceil(filteredStudents.length / studentsPerPage)
@@ -137,14 +187,35 @@ export function StudentsTable() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Search className="h-5 w-5 text-primary" />
-            Students Directory
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-primary" />
+              Students Directory
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAllColumns(!showAllColumns)}
+                className="flex items-center gap-2"
+              >
+                <Filter className="h-4 w-4" />
+                {showAllColumns ? "Hide Columns" : "Show All Columns"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToCSV}
+                className="flex items-center gap-2 bg-transparent"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Search and Filter Controls */}
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1">
               <Input
                 placeholder="Search by name or student ID..."
@@ -154,7 +225,7 @@ export function StudentsTable() {
               />
             </div>
             <Select value={classFilter} onValueChange={setClassFilter}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-full lg:w-48">
                 <SelectValue placeholder="Filter by class" />
               </SelectTrigger>
               <SelectContent>
@@ -166,6 +237,19 @@ export function StudentsTable() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={clusterFilter} onValueChange={setClusterFilter}>
+              <SelectTrigger className="w-full lg:w-48">
+                <SelectValue placeholder="Filter by persona" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Personas</SelectItem>
+                {uniqueClusters.map((cluster) => (
+                  <SelectItem key={cluster} value={cluster.toString()}>
+                    {clusterNames[cluster as keyof typeof clusterNames]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Results Summary */}
@@ -173,8 +257,7 @@ export function StudentsTable() {
             Showing {paginatedStudents.length} of {filteredStudents.length} students
           </div>
 
-          {/* Students Table */}
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -211,6 +294,65 @@ export function StudentsTable() {
                       <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                   </TableHead>
+                  {showAllColumns && (
+                    <>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSort("comprehension")}
+                          className="h-auto p-0 font-semibold"
+                        >
+                          Comprehension
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSort("attention")}
+                          className="h-auto p-0 font-semibold"
+                        >
+                          Attention
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSort("focus")}
+                          className="h-auto p-0 font-semibold"
+                        >
+                          Focus
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSort("retention")}
+                          className="h-auto p-0 font-semibold"
+                        >
+                          Retention
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSort("engagement_time")}
+                          className="h-auto p-0 font-semibold"
+                        >
+                          Engagement
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead>
                     <Button
                       variant="ghost"
@@ -232,8 +374,27 @@ export function StudentsTable() {
                     <TableCell className="font-medium">{student.name}</TableCell>
                     <TableCell className="font-mono text-sm">{student.student_id}</TableCell>
                     <TableCell>{student.class}</TableCell>
+                    {showAllColumns && (
+                      <>
+                        <TableCell>
+                          <span className="font-semibold">{student.comprehension.toFixed(1)}%</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold">{student.attention.toFixed(1)}%</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold">{student.focus.toFixed(1)}%</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold">{student.retention.toFixed(1)}%</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold">{student.engagement_time.toFixed(1)}m</span>
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell>
-                      <span className="font-semibold">{student.assessment_score.toFixed(1)}</span>
+                      <span className="font-semibold">{student.assessment_score.toFixed(1)}%</span>
                     </TableCell>
                     <TableCell>
                       <Badge className={clusterColors[student.cluster as keyof typeof clusterColors]}>
@@ -244,7 +405,7 @@ export function StudentsTable() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setSelectedStudent(student)}
+                        onClick={() => handleViewProfile(student)}
                         className="flex items-center gap-2"
                       >
                         <Eye className="h-4 w-4" />
@@ -286,19 +447,14 @@ export function StudentsTable() {
         </CardContent>
       </Card>
 
-      {/* Selected Student Radar Chart */}
-      {selectedStudent && (
-        <StudentRadarChart
-          studentName={selectedStudent.name}
-          profile={{
-            comprehension: selectedStudent.comprehension,
-            attention: selectedStudent.attention,
-            focus: selectedStudent.focus,
-            retention: selectedStudent.retention,
-            engagement_time: selectedStudent.engagement_time,
-          }}
-        />
-      )}
+      <DetailedStudentProfile
+        student={selectedStudent}
+        isOpen={showDetailedProfile}
+        onClose={() => {
+          setShowDetailedProfile(false)
+          setSelectedStudent(null)
+        }}
+      />
     </div>
   )
 }
